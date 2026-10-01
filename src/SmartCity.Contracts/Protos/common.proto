@@ -1,0 +1,67 @@
+syntax = "proto3";
+package smartcity.common.v1;
+
+// ─────────────────────────────────────────────────────────────
+// Shared types used across all query and command services.
+// ─────────────────────────────────────────────────────────────
+
+// GPS coordinates with optional accuracy.
+message GeoCoordinates {
+  double latitude = 1;
+  double longitude = 2;
+  double accuracy_meters = 3;   // optional; 0 if unknown
+}
+
+// A rectangular map area — used for "show me detections on screen" queries.
+message BoundingBox {
+  GeoCoordinates north_east = 1;
+  GeoCoordinates south_west = 2;
+}
+
+// A time window filter. Timestamps are Unix epoch milliseconds, UTC.
+message TimeRange {
+  int64 from_utc = 1;
+  int64 to_utc = 2;
+}
+
+// ─── Pagination (cursor-based, not offset) ───────────────────
+// Cursor-based survives concurrent writes; offset pagination does not.
+message PaginationRequest {
+  int32 page_size = 1;          // max records to return (server caps this)
+  string page_token = 2;        // empty for first page; from previous response otherwise
+}
+
+message PaginationResponse {
+  string next_page_token = 1;   // empty when there are no more pages
+  int32 total_count = 2;        // best-effort total; may be approximate
+}
+
+// ─── Command metadata (on every write) ───────────────────────
+// Carries the idempotency key so retries never create duplicates.
+message CommandMetadata {
+  string idempotency_key = 1;   // client-generated UUID; same key = same operation
+  string submitted_by = 2;      // officer/user ID from the JWT
+  int64 submitted_at_utc = 3;   // client timestamp, epoch ms
+  string correlation_id = 4;    // for tracing one action across services
+}
+
+// ─── Standard command response ───────────────────────────────
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;   // treat as success when success = true
+  ERROR_CODE_NONE = 1;          // explicit "no error"
+  ERROR_CODE_DUPLICATE = 2;     // idempotency key already seen — returns original result
+  ERROR_CODE_NOT_FOUND = 3;     // target entity does not exist
+  ERROR_CODE_INVALID_STATE = 4; // e.g. completing an already-closed work order
+  ERROR_CODE_VALIDATION = 5;    // bad input (missing field, bad URL, etc.)
+  ERROR_CODE_AUTH_FAILED = 6;   // caller not allowed to do this
+  ERROR_CODE_INTERNAL = 7;      // unexpected server error
+}
+
+message CommandResponse {
+  bool success = 1;
+  ErrorCode error_code = 2;
+  string message = 3;           // human-readable detail for logs / UI
+  string entity_id = 4;         // ID of the created or affected entity
+  string request_id = 5;        // echoes CommandMetadata.idempotency_key
+  int64 processed_at_utc = 6;   // server timestamp, epoch ms
+}

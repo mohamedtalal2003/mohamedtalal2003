@@ -1,0 +1,190 @@
+syntax = "proto3";
+package smartcity.commands.v1;
+
+import "common.proto";
+import "enums.proto";
+
+// ─────────────────────────────────────────────────────────────
+// WRITE side. Officer/crew-initiated actions, called by the API
+// Gateway over gRPC. Writes are synchronous and idempotent:
+// every request carries CommandMetadata with an idempotency key,
+// and every response is the shared CommandResponse (see common.proto).
+//
+// NOTE on *_image_url fields: the service MUST reject any URL that
+// does not point to our own blob storage. The upload flow is:
+//   1. client uploads the photo to blob storage (REST on the gateway)
+//   2. gateway returns the blob URL
+//   3. client passes THAT url here
+// ─────────────────────────────────────────────────────────────
+
+// ─── Work Order ──────────────────────────────────────────────
+service WorkOrderCommandService {
+  // Officer / supervisor
+  rpc CreateWorkOrder (CreateWorkOrderRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc AssignCrew (AssignCrewRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc ReassignWorkOrder (ReassignWorkOrderRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc ChangePriority (ChangePriorityRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc RejectResolution (RejectResolutionRequest) returns (smartcity.common.v1.CommandResponse);
+
+  // Field crew — lifecycle from assignment to completion
+  rpc MarkEnRoute (WorkOrderActionRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc MarkOnSite (WorkOrderActionRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc PauseWork (PauseWorkRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc ResumeWork (WorkOrderActionRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc LogWorkDetails (LogWorkDetailsRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc SubmitCompletionProof (SubmitCompletionProofRequest) returns (smartcity.common.v1.CommandResponse);
+}
+
+// Reused by the simple state-transition actions that need no extra data.
+message WorkOrderActionRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string work_order_id = 2;
+}
+
+message ReassignWorkOrderRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string work_order_id = 2;
+  string new_crew_id = 3;
+  string reason = 4;
+}
+
+message ChangePriorityRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string work_order_id = 2;
+  smartcity.enums.v1.PriorityLevel new_priority = 3;
+  string reason = 4;
+}
+
+message PauseWorkRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string work_order_id = 2;
+  smartcity.enums.v1.PauseReason reason = 3;
+  string detail = 4;                  // free text when reason = OTHER
+}
+
+// Crew logs what they actually used — reconciled against the estimate.
+message LogWorkDetailsRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string work_order_id = 2;
+  repeated MaterialUsedInput materials = 3;
+  double labor_hours = 4;
+}
+
+message MaterialUsedInput {
+  string name = 1;
+  double quantity = 2;
+  string unit = 3;
+}
+
+message CreateWorkOrderRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string source_detection_id = 2;
+  smartcity.enums.v1.SourceEntityType source_entity_type = 3;   // was a string
+  smartcity.enums.v1.PriorityLevel priority = 4;                // was a string
+}
+
+message AssignCrewRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string work_order_id = 2;
+  string crew_id = 3;
+}
+
+message SubmitCompletionProofRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string work_order_id = 2;
+  string after_image_url = 3;         // MUST be a blob-storage URL (see note above)
+  string completion_notes = 4;
+}
+
+message RejectResolutionRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string work_order_id = 2;
+  string rejection_reason = 3;
+}
+
+// ─── Urban Inventory ─────────────────────────────────────────
+service UrbanInventoryCommandService {
+  rpc UpdateAssetCondition (UpdateAssetConditionRequest) returns (smartcity.common.v1.CommandResponse);
+}
+
+message UpdateAssetConditionRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string asset_id = 2;
+  smartcity.enums.v1.AssetCondition new_condition = 3;
+  string evidence_image_url = 4;      // MUST be a blob-storage URL
+}
+
+// ─── Violation ───────────────────────────────────────────────
+service ViolationCommandService {
+  rpc AcknowledgeViolation (AcknowledgeViolationRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc DismissViolation (DismissViolationRequest) returns (smartcity.common.v1.CommandResponse);
+}
+
+message AcknowledgeViolationRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string violation_id = 2;
+  string officer_notes = 3;
+}
+
+message DismissViolationRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string violation_id = 2;
+  string dismissal_reason = 3;        // e.g. permit later verified, false positive
+}
+
+// ─── Building ────────────────────────────────────────────────
+service BuildingCommandService {
+  rpc MarkAnomalyResolved (MarkAnomalyResolvedRequest) returns (smartcity.common.v1.CommandResponse);
+}
+
+message MarkAnomalyResolvedRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string anomaly_id = 2;
+  string resolution_notes = 3;
+  string evidence_image_url = 4;      // MUST be a blob-storage URL
+}
+
+// ─── Cost Calculation ────────────────────────────────────────
+// Recalculation can be slow (touches material catalog + many records).
+// This is the one place the async 202-style pattern may apply later:
+// for now it is a normal sync command.
+service CostCommandService {
+  rpc RecalculateEstimate (RecalculateEstimateRequest) returns (smartcity.common.v1.CommandResponse);
+}
+
+message RecalculateEstimateRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string source_entity_id = 2;
+  smartcity.enums.v1.SourceEntityType source_entity_type = 3;
+}
+
+// ─── Notification ────────────────────────────────────────────
+service NotificationCommandService {
+  rpc MarkAsRead (MarkAsReadRequest) returns (smartcity.common.v1.CommandResponse);
+  rpc MarkAllAsRead (MarkAllAsReadRequest) returns (smartcity.common.v1.CommandResponse);
+}
+
+message MarkAsReadRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string notification_id = 2;
+}
+
+message MarkAllAsReadRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+}
+
+// ─── Crew Evaluation ─────────────────────────────────────────
+// Supervisor reviews completed work and scores the crew. This is
+// feedback, not a gate — the work order is already closed. Stored
+// as its own record so crew performance can be tracked over time.
+service CrewEvaluationCommandService {
+  rpc SubmitCrewEvaluation (SubmitCrewEvaluationRequest) returns (smartcity.common.v1.CommandResponse);
+}
+
+message SubmitCrewEvaluationRequest {
+  smartcity.common.v1.CommandMetadata metadata = 1;
+  string work_order_id = 2;           // the completed work being reviewed
+  string crew_id = 3;
+  int32 score = 4;                    // 1–5
+  string feedback = 5;                // written feedback
+}

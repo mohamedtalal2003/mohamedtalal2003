@@ -1,0 +1,110 @@
+syntax = "proto3";
+package smartcity.enums.v1;
+
+// ─────────────────────────────────────────────────────────────
+// Shared domain enums. Kept in one file so queries and commands
+// reference the same definitions.
+// ─────────────────────────────────────────────────────────────
+
+// ─── Road damage (Pothole service) ───────────────────────────
+// Progressive stages of road surface deterioration.
+enum DamageStage {
+  DAMAGE_STAGE_UNSPECIFIED = 0;
+  DAMAGE_STAGE_RAVELING = 1;            // Yüzey Oksidasyonu / Aşınma
+  DAMAGE_STAGE_TRANSVERSE_CRACKING = 2; // Boyuna / Enine Çatlak
+  DAMAGE_STAGE_BLOCK_CRACKING = 3;      // Blok Çatlama
+  DAMAGE_STAGE_FATIGUE_CRACKING = 4;    // Yorgunluk Çatlağı
+  DAMAGE_STAGE_RUTTING = 5;             // Tekerlek İzi / Ötelenme
+  DAMAGE_STAGE_DEPRESSION = 6;          // Yerel Çökme / Su Birikintisi
+  DAMAGE_STAGE_POTHOLE = 7;             // Çukur Oluşumu
+}
+
+// ─── Urban inventory (Inventory service) ─────────────────────
+enum AssetCategory {
+  ASSET_CATEGORY_UNSPECIFIED = 0;
+  ASSET_CATEGORY_TRAFFIC_SIGN = 1;      // Trafik ve yön levhaları
+  ASSET_CATEGORY_LIGHTING = 2;          // Işıklandırma
+  ASSET_CATEGORY_SAFETY_ELEMENT = 3;    // Yol güvenlik elemanları
+  ASSET_CATEGORY_URBAN_FURNITURE = 4;   // Kent mobilyası
+  ASSET_CATEGORY_PEDESTRIAN_INFRA = 5;  // Yaya / bisiklet altyapısı
+}
+
+enum AssetCondition {
+  ASSET_CONDITION_UNSPECIFIED = 0;
+  ASSET_CONDITION_INTACT = 1;           // Sağlam
+  ASSET_CONDITION_FADED = 2;            // Aşınmış / Solmuş
+  ASSET_CONDITION_GRAFFITI = 3;         // Graffiti / Kirletilmiş
+  ASSET_CONDITION_BROKEN = 4;           // Kırık / Hasarlı
+  ASSET_CONDITION_MISSING = 5;          // Eksik / Devrilmiş
+}
+
+// ─── Violation service ───────────────────────────────────────
+enum ViolationType {
+  VIOLATION_TYPE_UNSPECIFIED = 0;
+  VIOLATION_TYPE_UNAUTHORIZED = 1;      // No permit on record
+  VIOLATION_TYPE_OVERSIZED = 2;         // Exceeds permitted dimensions
+  VIOLATION_TYPE_ILLEGAL_PLACEMENT = 3; // Wrong/restricted location
+  VIOLATION_TYPE_EXPIRED_PERMIT = 4;    // Permit lapsed
+}
+
+// ─── Building service ────────────────────────────────────────
+enum AnomalyType {
+  ANOMALY_TYPE_UNSPECIFIED = 0;
+  ANOMALY_TYPE_MISSING_BARRIER = 1;     // No safety barrier on site
+  ANOMALY_TYPE_ILLEGAL_EXTENSION = 2;   // Unpermitted structure
+  ANOMALY_TYPE_SCAFFOLDING = 3;         // Scaffolding anomaly / hazard
+  ANOMALY_TYPE_DEBRIS = 4;              // Debris / obstruction on public way
+}
+
+// ─── Cross-cutting ───────────────────────────────────────────
+// Which kind of detection a work order / cost estimate refers to.
+enum SourceEntityType {
+  SOURCE_ENTITY_TYPE_UNSPECIFIED = 0;
+  SOURCE_ENTITY_TYPE_ROAD_DAMAGE = 1;
+  SOURCE_ENTITY_TYPE_ASSET_DAMAGE = 2;
+  SOURCE_ENTITY_TYPE_VIOLATION = 3;
+  SOURCE_ENTITY_TYPE_BUILDING_ANOMALY = 4;
+}
+
+// Priority shared by work orders and suggested by cost calc.
+enum PriorityLevel {
+  PRIORITY_LEVEL_UNSPECIFIED = 0;
+  PRIORITY_LEVEL_CRITICAL = 1;
+  PRIORITY_LEVEL_HIGH = 2;
+  PRIORITY_LEVEL_MEDIUM = 3;
+  PRIORITY_LEVEL_ROUTINE = 4;
+}
+
+// Work order lifecycle.
+// Main path: PENDING → ASSIGNED → EN_ROUTE → ON_SITE → COMPLETED.
+// PAUSED can interrupt ON_SITE and resume back to it.
+enum WorkOrderStatus {
+  WORK_ORDER_STATUS_UNSPECIFIED = 0;
+  WORK_ORDER_STATUS_PENDING = 1;        // created, not yet assigned
+  WORK_ORDER_STATUS_ASSIGNED = 2;       // crew assigned, not yet moving
+  WORK_ORDER_STATUS_IN_PROGRESS = 3;    // (legacy generic "working" state)
+  WORK_ORDER_STATUS_AWAITING_REVIEW = 4;// proof submitted, awaiting sign-off (optional)
+  WORK_ORDER_STATUS_COMPLETED = 5;      // crew submitted completion; ticket closed
+  WORK_ORDER_STATUS_REJECTED = 6;       // resolution rejected, back to crew
+  WORK_ORDER_STATUS_EN_ROUTE = 7;       // crew traveling to site
+  WORK_ORDER_STATUS_ON_SITE = 8;        // crew arrived and working
+  WORK_ORDER_STATUS_PAUSED = 9;         // work paused (materials, weather, etc.)
+}
+
+// Reason a crew paused work — kept coarse on purpose.
+enum PauseReason {
+  PAUSE_REASON_UNSPECIFIED = 0;
+  PAUSE_REASON_OUT_OF_MATERIALS = 1;
+  PAUSE_REASON_WEATHER = 2;
+  PAUSE_REASON_EQUIPMENT_FAILURE = 3;
+  PAUSE_REASON_SITE_INACCESSIBLE = 4;
+  PAUSE_REASON_OTHER = 5;
+}
+
+// Districts of Konya (partition key for several services).
+enum District {
+  DISTRICT_UNSPECIFIED = 0;
+  DISTRICT_MERAM = 1;
+  DISTRICT_SELCUKLU = 2;
+  DISTRICT_KARATAY = 3;
+}

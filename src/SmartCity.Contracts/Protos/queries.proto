@@ -1,0 +1,402 @@
+syntax = "proto3";
+package smartcity.queries.v1;
+
+import "common.proto";
+import "enums.proto";
+
+// ─────────────────────────────────────────────────────────────
+// READ side. Officer-initiated queries, called by the API Gateway
+// over gRPC. All reads are synchronous.
+//
+// Every List* request shares the same filter shape: optional
+// districts, optional time range, optional map bounding box,
+// plus pagination. Empty filter = no constraint on that field.
+// ─────────────────────────────────────────────────────────────
+
+// ─── Road Damage (Pothole) ───────────────────────────────────
+service RoadDamageQueryService {
+  rpc GetDamageById (GetDamageRequest) returns (DamageDetailResponse);
+  rpc ListDamages (ListDamagesRequest) returns (ListDamagesResponse);
+  rpc GetDamageTimeline (GetDamageRequest) returns (DamageTimelineResponse);
+}
+
+// Full history of one damage cluster: every time it was seen, and
+// every stage change, oldest first.
+message DamageTimelineResponse {
+  string damage_id = 1;
+  repeated TimelineEntry entries = 2;
+}
+
+message TimelineEntry {
+  int64 timestamp_utc = 1;
+  string event_type = 2;        // "DETECTED", "RE_DETECTED", "STAGE_CHANGED", "WORK_ORDER_CREATED", "REPAIRED"
+  string detail = 3;            // human-readable summary
+  string image_url = 4;         // snapshot at this point, if any
+}
+
+message GetDamageRequest {
+  string damage_id = 1;
+}
+
+message ListDamagesRequest {
+  // Filters (all optional)
+  repeated smartcity.enums.v1.DamageStage stages = 1;      // empty = all stages
+  smartcity.enums.v1.DamageStage min_stage = 2;            // e.g. only POTHOLE and worse
+  repeated smartcity.enums.v1.District districts = 3;      // empty = all districts
+  smartcity.common.v1.TimeRange time_range = 4;            // empty = all time
+  smartcity.common.v1.BoundingBox map_area = 5;            // empty = whole city
+  bool requires_repair_only = 6;                           // only items needing repair
+  bool without_active_work_order = 7;                      // only items not yet ticketed
+  smartcity.common.v1.PaginationRequest pagination = 8;
+}
+
+message DamageDetailResponse {
+  string damage_id = 1;
+  smartcity.enums.v1.DamageStage stage = 2;
+  smartcity.enums.v1.District district = 3;
+  smartcity.common.v1.GeoCoordinates location = 4;
+  string road_name = 5;
+  string latest_image_url = 6;
+  string active_work_order_id = 7;      // empty if none
+  int32 detection_count = 8;            // times this cluster was seen
+  int64 detection_timestamp_utc = 9;
+  int64 last_seen_timestamp_utc = 10;
+}
+
+message ListDamagesResponse {
+  repeated DamageDetailResponse records = 1;
+  smartcity.common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── Urban Inventory ─────────────────────────────────────────
+service UrbanInventoryQueryService {
+  rpc GetAssetById (GetAssetRequest) returns (AssetDetailResponse);
+  rpc ListAssets (ListAssetsRequest) returns (ListAssetsResponse);
+  rpc GetAssetTimeline (GetAssetRequest) returns (AssetTimelineResponse);
+}
+
+// Full condition history of one asset, oldest first.
+// Reuses TimelineEntry (defined in the road damage section).
+message AssetTimelineResponse {
+  string asset_id = 1;
+  repeated TimelineEntry entries = 2;
+}
+
+message GetAssetRequest {
+  string asset_id = 1;
+}
+
+message ListAssetsRequest {
+  repeated smartcity.enums.v1.AssetCategory categories = 1;
+  repeated smartcity.enums.v1.AssetCondition conditions = 2;
+  repeated smartcity.enums.v1.District districts = 3;
+  smartcity.common.v1.TimeRange time_range = 4;
+  smartcity.common.v1.BoundingBox map_area = 5;
+  smartcity.common.v1.PaginationRequest pagination = 6;
+}
+
+message AssetDetailResponse {
+  string asset_id = 1;
+  smartcity.enums.v1.AssetCategory category = 2;
+  smartcity.enums.v1.AssetCondition condition = 3;
+  smartcity.enums.v1.District district = 4;
+  smartcity.common.v1.GeoCoordinates location = 5;
+  string asset_code = 6;
+  string last_seen_image_url = 7;
+  int64 last_verified_timestamp_utc = 8;
+}
+
+message ListAssetsResponse {
+  repeated AssetDetailResponse records = 1;
+  smartcity.common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── Violation ───────────────────────────────────────────────
+service ViolationQueryService {
+  rpc GetViolationById (GetViolationRequest) returns (ViolationDetailResponse);
+  rpc ListViolations (ListViolationsRequest) returns (ListViolationsResponse);
+}
+
+message GetViolationRequest {
+  string violation_id = 1;
+}
+
+message ListViolationsRequest {
+  repeated smartcity.enums.v1.ViolationType types = 1;
+  repeated smartcity.enums.v1.District districts = 2;
+  smartcity.common.v1.TimeRange time_range = 3;
+  smartcity.common.v1.BoundingBox map_area = 4;
+  bool permit_missing_only = 5;               // only ones with no permit on record
+  smartcity.common.v1.PaginationRequest pagination = 6;
+}
+
+message ViolationDetailResponse {
+  string violation_id = 1;
+  smartcity.enums.v1.ViolationType type = 2;
+  smartcity.enums.v1.District district = 3;
+  smartcity.common.v1.GeoCoordinates location = 4;
+  string detected_text = 5;                   // OCR text on the banner/sign
+  bool permit_found = 6;
+  string permit_number = 7;                   // empty if none
+  string violated_rule_code = 8;
+  string image_url = 9;
+  string active_work_order_id = 10;
+  int64 detection_timestamp_utc = 11;
+}
+
+message ListViolationsResponse {
+  repeated ViolationDetailResponse records = 1;
+  smartcity.common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── Building ────────────────────────────────────────────────
+service BuildingQueryService {
+  rpc GetAnomalyById (GetAnomalyRequest) returns (AnomalyDetailResponse);
+  rpc ListAnomalies (ListAnomaliesRequest) returns (ListAnomaliesResponse);
+}
+
+message GetAnomalyRequest {
+  string anomaly_id = 1;
+}
+
+message ListAnomaliesRequest {
+  repeated smartcity.enums.v1.AnomalyType types = 1;
+  repeated smartcity.enums.v1.District districts = 2;
+  smartcity.common.v1.TimeRange time_range = 3;
+  smartcity.common.v1.BoundingBox map_area = 4;
+  bool unresolved_only = 5;
+  smartcity.common.v1.PaginationRequest pagination = 6;
+}
+
+message AnomalyDetailResponse {
+  string anomaly_id = 1;
+  smartcity.enums.v1.AnomalyType type = 2;
+  smartcity.enums.v1.District district = 3;
+  smartcity.common.v1.GeoCoordinates location = 4;
+  string address = 5;
+  string site_permit_number = 6;              // empty if none
+  string contractor_name = 7;
+  string image_url = 8;
+  string active_work_order_id = 9;
+  int64 detection_timestamp_utc = 10;
+}
+
+message ListAnomaliesResponse {
+  repeated AnomalyDetailResponse records = 1;
+  smartcity.common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── Cost Calculation ────────────────────────────────────────
+service CostQueryService {
+  rpc GetEstimateForEntity (GetEstimateRequest) returns (EstimateDetailResponse);
+  rpc ListEstimates (ListEstimatesRequest) returns (ListEstimatesResponse);
+}
+
+message GetEstimateRequest {
+  string source_entity_id = 1;                // the pothole/asset/etc. id
+  smartcity.enums.v1.SourceEntityType source_entity_type = 2;
+}
+
+message ListEstimatesRequest {
+  repeated smartcity.enums.v1.SourceEntityType source_types = 1;
+  repeated smartcity.enums.v1.District districts = 2;
+  smartcity.common.v1.TimeRange time_range = 3;
+  smartcity.common.v1.PaginationRequest pagination = 4;
+}
+
+message MaterialLine {
+  string name = 1;
+  double quantity = 2;
+  string unit = 3;                            // "m³", "kg", "m²"
+  double unit_cost = 4;
+  double total_cost = 5;
+}
+
+message EstimateDetailResponse {
+  string estimate_id = 1;
+  string source_entity_id = 2;
+  smartcity.enums.v1.SourceEntityType source_entity_type = 3;
+  double material_cost = 4;
+  double labor_cost = 5;
+  double equipment_cost = 6;
+  double total_cost = 7;
+  string currency = 8;                        // "TRY"
+  repeated MaterialLine materials = 9;
+  double estimated_labor_hours = 10;
+  smartcity.enums.v1.PriorityLevel suggested_priority = 11;
+  int64 calculated_at_utc = 12;
+}
+
+message ListEstimatesResponse {
+  repeated EstimateDetailResponse records = 1;
+  smartcity.common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── Notification (officer-facing inbox) ─────────────────────
+service NotificationQueryService {
+  rpc ListMyNotifications (ListNotificationsRequest) returns (ListNotificationsResponse);
+}
+
+message ListNotificationsRequest {
+  bool unread_only = 1;
+  smartcity.common.v1.TimeRange time_range = 2;
+  smartcity.common.v1.PaginationRequest pagination = 3;
+}
+
+message NotificationItem {
+  string notification_id = 1;
+  string title = 2;
+  string body = 3;
+  string related_entity_id = 4;
+  smartcity.enums.v1.SourceEntityType related_entity_type = 5;
+  bool is_read = 6;
+  int64 created_at_utc = 7;
+}
+
+message ListNotificationsResponse {
+  repeated NotificationItem records = 1;
+  smartcity.common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── Work Order (read side) ──────────────────────────────────
+service WorkOrderQueryService {
+  rpc GetWorkOrderById (GetWorkOrderRequest) returns (WorkOrderDetailResponse);
+  rpc ListWorkOrders (ListWorkOrdersRequest) returns (ListWorkOrdersResponse);
+  rpc ListMyWorkOrders (ListMyWorkOrdersRequest) returns (ListWorkOrdersResponse);
+}
+
+message GetWorkOrderRequest {
+  string work_order_id = 1;
+}
+
+// Officer/supervisor view — all work orders with filters.
+message ListWorkOrdersRequest {
+  repeated smartcity.enums.v1.WorkOrderStatus statuses = 1;
+  repeated smartcity.enums.v1.PriorityLevel priorities = 2;
+  repeated smartcity.enums.v1.District districts = 3;
+  repeated smartcity.enums.v1.SourceEntityType source_types = 4;
+  string assigned_crew_id = 5;              // empty = any crew
+  bool overdue_only = 6;                    // SLA due date passed and not completed
+  smartcity.common.v1.TimeRange time_range = 7;
+  smartcity.common.v1.PaginationRequest pagination = 8;
+}
+
+// Crew view — only the caller's assigned work orders.
+// crew_id comes from the JWT, not the request body.
+message ListMyWorkOrdersRequest {
+  repeated smartcity.enums.v1.WorkOrderStatus statuses = 1;  // empty = active ones
+  smartcity.common.v1.PaginationRequest pagination = 2;
+}
+
+message MaterialUsed {
+  string name = 1;
+  double quantity = 2;
+  string unit = 3;
+}
+
+message WorkOrderDetailResponse {
+  string work_order_id = 1;
+  string ticket_number = 2;
+  string source_detection_id = 3;
+  smartcity.enums.v1.SourceEntityType source_entity_type = 4;
+  smartcity.enums.v1.WorkOrderStatus status = 5;
+  smartcity.enums.v1.PriorityLevel priority = 6;
+  smartcity.enums.v1.District district = 7;
+  smartcity.common.v1.GeoCoordinates location = 8;
+  string title = 9;
+  string description = 10;
+  string assigned_crew_id = 11;
+  string assigned_crew_name = 12;
+  int64 created_at_utc = 13;
+  int64 sla_due_utc = 14;
+  int64 completed_at_utc = 15;             // 0 if not completed
+  string before_image_url = 16;
+  string after_image_url = 17;             // set once completion proof submitted
+  repeated MaterialUsed materials_used = 18;
+  double labor_hours = 19;
+  double estimated_cost = 20;
+}
+
+message ListWorkOrdersResponse {
+  repeated WorkOrderDetailResponse records = 1;
+  smartcity.common.v1.PaginationResponse pagination = 2;
+}
+
+// ─── Dashboard (aggregations) ────────────────────────────────
+service DashboardQueryService {
+  rpc GetDistrictSummary (DistrictSummaryRequest) returns (DistrictSummaryResponse);
+  rpc GetWorkloadStats (WorkloadStatsRequest) returns (WorkloadStatsResponse);
+}
+
+// Counts of open detections + work orders, optionally scoped to districts.
+message DistrictSummaryRequest {
+  repeated smartcity.enums.v1.District districts = 1;   // empty = all
+  smartcity.common.v1.TimeRange time_range = 2;         // empty = all time
+}
+
+message DistrictCounts {
+  smartcity.enums.v1.District district = 1;
+  int32 open_road_damages = 2;
+  int32 open_asset_issues = 3;
+  int32 open_violations = 4;
+  int32 open_building_anomalies = 5;
+  int32 open_work_orders = 6;
+  int32 overdue_work_orders = 7;
+}
+
+message DistrictSummaryResponse {
+  repeated DistrictCounts per_district = 1;
+  DistrictCounts totals = 2;                            // city-wide roll-up
+}
+
+// Crew workload — how many active work orders each crew has.
+message WorkloadStatsRequest {
+  repeated smartcity.enums.v1.District districts = 1;
+}
+
+message CrewWorkload {
+  string crew_id = 1;
+  string crew_name = 2;
+  int32 assigned = 3;
+  int32 in_progress = 4;
+  int32 completed_today = 5;
+}
+
+message WorkloadStatsResponse {
+  repeated CrewWorkload crews = 1;
+}
+
+// ─── Crew Evaluation (read side) ─────────────────────────────
+service CrewEvaluationQueryService {
+  rpc GetEvaluationById (GetEvaluationRequest) returns (CrewEvaluationResponse);
+  rpc ListCrewEvaluations (ListEvaluationsRequest) returns (ListEvaluationsResponse);
+}
+
+message GetEvaluationRequest {
+  string evaluation_id = 1;
+}
+
+// Filter by crew to see their history, or by work order to see one review.
+message ListEvaluationsRequest {
+  string crew_id = 1;                       // empty = all crews
+  string work_order_id = 2;                 // empty = all work orders
+  smartcity.common.v1.TimeRange time_range = 3;
+  smartcity.common.v1.PaginationRequest pagination = 4;
+}
+
+message CrewEvaluationResponse {
+  string evaluation_id = 1;
+  string work_order_id = 2;
+  string crew_id = 3;
+  string crew_name = 4;
+  int32 score = 5;                          // 1–5
+  string feedback = 6;                      // written feedback
+  string evaluated_by = 7;                  // supervisor user ID
+  int64 evaluated_at_utc = 8;
+}
+
+message ListEvaluationsResponse {
+  repeated CrewEvaluationResponse records = 1;
+  smartcity.common.v1.PaginationResponse pagination = 2;
+  double average_score = 3;                 // over the filtered set
+}
